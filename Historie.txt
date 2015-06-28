@@ -1,0 +1,25 @@
+BLEGrill Versions Historie
+
+V1.3
+Alarm Notification wird nun notifiziert.
+Quitt Alarm wird nun empfangen und deaktiviert den Buzzer.
+
+V1.2:
+Broadcast disabled, da dieses zu staendigen Verbindungsabbruechen bei der Android fuehrt.
+Da Broadcast nur funktioniert wenn keine Verbindung besteht, denke ich, dass Broadcasting bei einem Verbindungsaufbau deaktivert werden muss.
+Ich habe aber bisher keine Ensprechende Funktion gefunden.
+  
+V1.1:
+Erkennung (0x19 Appearence ) 0xF69A hinzugefuegt
+Broadcast aktiviert
+AllTempBroadcast Service hinzugefuegt
+Broadcast von TempSensor 1 - 4 Entfernt
+
+V1.0:
+Sensor-Typ kann gesetz werden
+High-und Low-Temperatur kann gesetzt und gelesen werden
+Buzzer kann aktiviert / deaktivert werden
+Hardware (Alarm-, Status-LED, Buzzer) kann gesetzt und gelesen werden
+Alarm-Typ (Kein Alarm, Nur High-, Nur Low-, High- und Low-Alarm) kann gesetzt und gelesen werden
+Messintervall kann gesetzt und gelesen werden
+Notifyintervall kann gesetzt und gelesen werden
