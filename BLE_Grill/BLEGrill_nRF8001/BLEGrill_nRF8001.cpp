@@ -14,8 +14,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include "BLEGrill_nRF8001.h"
 
 
-#define ADVERTISING_INTERVAL 510  // (multiple of 0.625ms)
-#define ADVERTISING_TIMEOUT 30 // sec (0 means never)
+
 
 // ----------------------------------------------------
 // lib_aci Interaction
@@ -171,9 +170,8 @@ static void process_events()
                     else
                     {
                         lib_aci_set_local_data(&aci_state, PIPE_GAP_DEVICE_NAME_SET , (uint8_t *)&device_name , strlen(device_name));
-//                        lib_aci_connect(180/* in seconds */, 0x0050 /* advertising interval 50ms*/);
-                        lib_aci_connect(ADVERTISING_TIMEOUT/* in seconds, 0 means forever */, ADVERTISING_INTERVAL /* advertising interval 50ms*/);
-                        Serial.println(F("Advertising started"));
+//                        lib_aci_connect(ADVERTISING_TIMEOUT/* in seconds, 0 means forever */, ADVERTISING_INTERVAL /* advertising interval 50ms*/);
+//                        Serial.println(F("Advertising started"));
                     }
                     break;
                 }
@@ -186,7 +184,7 @@ static void process_events()
                     //ACI ReadDynamicData and ACI WriteDynamicData will have status codes of
                     //TRANSACTION_CONTINUE and TRANSACTION_COMPLETE
                     //all other ACI commands will have status code of ACI_STATUS_SCUCCESS for a successful command
-#ifdef DEBUG
+#ifdef ACI_DEBUG
                     Serial.print(F("ACI Command "));
                     Serial.println(aci_evt->params.cmd_rsp.cmd_opcode, HEX);
                     Serial.print(F("Evt Cmd respone: Status "));
@@ -218,18 +216,22 @@ static void process_events()
                 break;
 
             case ACI_EVT_TIMING:
+#ifdef ACI_DEBUG
                 Serial.println(F("Evt link connection interval changed"));
+#endif
                 break;
 
             case ACI_EVT_DISCONNECTED:
+#ifdef ACI_DEBUG
                 Serial.println(F("Evt Disconnected/Advertising timed out"));
-                lib_aci_connect(ADVERTISING_TIMEOUT/* in seconds  : 0 means forever */, ADVERTISING_INTERVAL /* advertising interval 50ms*/);
-                //Serial.println(F("Advertising started"));
+#endif
                 break;
 
             case ACI_EVT_DATA_RECEIVED:
+#ifdef ACI_DEBUG
                 Serial.print(F("Pipe Number: "));
                 Serial.println(aci_evt->params.data_received.rx_data.pipe_number, DEC);
+#endif
 //                for(int i=0; i<aci_evt->len - 2; i++)
 //                {
 //                    if(rx_buffer_len == MAX_RX_BUFF)
@@ -281,8 +283,8 @@ static void process_events()
                 }
                 Serial.println();
 //                lib_aci_connect(180/* in seconds, 0 means forever */, 0x0050 /* advertising interval 50ms*/);
-                lib_aci_connect(ADVERTISING_TIMEOUT/* in seconds, 0 means forever */, ADVERTISING_INTERVAL /* advertising interval 50ms*/);
-                Serial.println(F("Advertising started"));
+//                lib_aci_connect(ADVERTISING_TIMEOUT/* in seconds, 0 means forever */, ADVERTISING_INTERVAL /* advertising interval 50ms*/);
+//                Serial.println(F("Advertising started"));
                 break;
         }
 
@@ -349,8 +351,10 @@ boolean BLE::writeBufferToPipe(uint8_t *buffer, uint8_t byteCount, uint8_t pipe)
 
   if (lib_aci_is_pipe_available(&aci_state, pipe) && (aci_state.data_credit_available >= 1)) {
 
+#ifdef ACI_DEBUG
     Serial.print(byteCount);
     Serial.println(F(" bytes sent to pipe"));
+#endif
 
     success = lib_aci_send_data(pipe, buffer, byteCount);
 

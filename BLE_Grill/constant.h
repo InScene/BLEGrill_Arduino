@@ -1,7 +1,15 @@
 #ifndef CONSTANT
 #define CONSTANT
 
-#define DEBUG 1 /* Enable Disable debug prints */
+//#define ENABLE_STARTUP_DELAY 1 /* Enables a 3 second delay on startup */
+
+/* Enable debug prints */
+//#define ACI_DEBUG 1 /* ACI lib */
+//#define STATEMACHINE_DEBUG 1 /* statemachine trigger */
+//#define ACTIONS_DEBUG 1 /* update read pipes, send notifications */
+//#define SENSOR_DEBUG 1 /* sensor */
+//#define ALARM_DEBUG 1 /* alarm  */
+//#define HW_STATES_DEBUG 1 /* hardware states */
 
 /***************************************************
  * Pin overview and defines

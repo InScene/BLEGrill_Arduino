@@ -31,6 +31,7 @@ public:
     void triggerMeasurement();
     void triggerNotifications();
     void switchTriggered();
+    void timeoutConnectionTimer();
     void receivedDataFromPipe(uint8_t *bytes, uint8_t byteCount, uint8_t pipe);
 
 private:
@@ -43,6 +44,23 @@ private:
       hw_states_statusLedState,
     };
 
+    enum STATEMACHINE_STATES{
+        machine_state_standby = 0,
+        machine_state_waitForRadioResetBroadcast,
+        machine_state_wairForConnectionBroadcast_Resp,
+        machine_state_broadcast,
+        machine_state_connected,
+    };
+
+    enum STATEMACHINE_EVENTS{
+        machine_event_startup = 0,
+        machine_event_connect,
+        machine_event_timeout,
+        machine_event_disconnect,
+        machine_event_radioResetRsp,
+        machine_event_connectionRsp
+    };
+
     struct ALL_TEMP_BROADCAST{
         uint8_t unit;
         uint16_t temp1;
@@ -52,27 +70,39 @@ private:
     };
 
     static BLEGrill* _instance;
+    STATEMACHINE_STATES _currState;
     BLE _BLE_board;         /* Bluetooth Low Energy (BLE) */
     AlarmHandle _alarmHandle;
     Timer _measureTimer;    /* Timer for Reading data */
     Timer _notifyTimer;     /* Timer for sending BLE notifications */
+    Timer _connectionTimer; /* Timer for waiting on BLE connection  */
     int _timerIdMeasure;
     int _timerIdNotify;
+    int _timerIdConnection;
     uint16_t _measureIntervall;
     uint16_t _notifyIntervall;
     TempSensor* tempSensors[4];
     DeviceSettings* _deviceSets;
-    bool _first_measure_pending;
 
     BLEGrill();
+
+    /* State machine */
+    void triggerStateMachine(const STATEMACHINE_EVENTS& event);
+    void goToState(const STATEMACHINE_STATES& state);
+
     void checkAlarms();
     void quittAlarm(const uint8_t state);
     void updateBluetoothReadPipes();
+    void updateBluetoothAdvertisingPipes();
     void sendBluetoothNotifications();
     void sendAlarmViaBluetooth(const bool isAlarmActive);
-    void activateBroadcast();
+    void activateBroadcastMode();
+    void activateConnectionMode();
+    void resetBleRadio();
     void setNotifyIntervall(uint16_t *intervall);
     void setMeasureIntervall(uint16_t *intervall);
+    void startConnectionTimer();
+    void stopConnectionTimer();
     void createSensors();
     void setAlarmSettings(const uint8_t sensorNb, const uint8_t *bytes);
     void getAlarmSettings(const TempSensor *sensor, uint8_t *bytes, uint8_t *size) const;

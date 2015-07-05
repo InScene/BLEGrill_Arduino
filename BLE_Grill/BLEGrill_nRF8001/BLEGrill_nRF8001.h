@@ -27,6 +27,9 @@ class BLE {
 
   public:
 
+#define ADVERTISING_INTERVAL 510  // (multiple of 0.625ms)
+#define ADVERTISING_TIMEOUT 0 // sec (0 means never)
+
     BLE(ACIPostEventHandler handlerFn);
 
     // Set LOCAL pipe value

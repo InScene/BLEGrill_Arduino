@@ -601,16 +601,16 @@
         <MaximumKeySize>16</MaximumKeySize>
         <AdvertisingDataBondedBitmap>10</AdvertisingDataBondedBitmap>
         <AdvertisingDataGeneralBitmap>10</AdvertisingDataGeneralBitmap>
-        <AdvertisingDataBrodcastBitmap>1000</AdvertisingDataBrodcastBitmap>
+        <AdvertisingDataBrodcastBitmap>0</AdvertisingDataBrodcastBitmap>
         <AdvertisingDataBondedScanResponseBitmap>0</AdvertisingDataBondedScanResponseBitmap>
-        <AdvertisingDataGeneralScanResponseBitmap>0</AdvertisingDataGeneralScanResponseBitmap>
-        <AdvertisingDataBrodcastScanResponseBitmap>1000</AdvertisingDataBrodcastScanResponseBitmap>
+        <AdvertisingDataGeneralScanResponseBitmap>1000</AdvertisingDataGeneralScanResponseBitmap>
+        <AdvertisingDataBrodcastScanResponseBitmap>0</AdvertisingDataBrodcastScanResponseBitmap>
         <AdvertisingDataBondedBitmapCustom>0</AdvertisingDataBondedBitmapCustom>
         <AdvertisingDataGeneralBitmapCustom>1</AdvertisingDataGeneralBitmapCustom>
-        <AdvertisingDataBrodcastBitmapCustom>1</AdvertisingDataBrodcastBitmapCustom>
+        <AdvertisingDataBrodcastBitmapCustom>0</AdvertisingDataBrodcastBitmapCustom>
         <AdvertisingDataBondedScanResponseBitmapCustom>0</AdvertisingDataBondedScanResponseBitmapCustom>
-        <AdvertisingDataGeneralScanResponseBitmapCustom>0</AdvertisingDataGeneralScanResponseBitmapCustom>
-        <AdvertisingDataBrodcastScanResponseBitmapCustom>1</AdvertisingDataBrodcastScanResponseBitmapCustom>
+        <AdvertisingDataGeneralScanResponseBitmapCustom>1</AdvertisingDataGeneralScanResponseBitmapCustom>
+        <AdvertisingDataBrodcastScanResponseBitmapCustom>0</AdvertisingDataBrodcastScanResponseBitmapCustom>
         <TxPowerLevelOffset>0</TxPowerLevelOffset>
         <MinimumConnectionInterval>6</MinimumConnectionInterval>
         <MaximumConnectionInterval>18</MaximumConnectionInterval>

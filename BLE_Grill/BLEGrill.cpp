@@ -5,6 +5,9 @@
 #define CLEAR_BIT(var,pos)  ((var) &= ~(1<<(pos)))
 #define TOGGLE_BIT(var,pos) ((var) ^= (1<<(pos)))
 
+/* Time in millisecond before timeout timer fire */
+#define CONNECTION_TIMER_TIME 5000
+
 BLEGrill* BLEGrill::_instance = 0;
 static const uint16_t _defMeasureIntvall = 2;    /* 2 seconds */
 static const uint16_t _defNotifyIntervall = 10;  /* 10 seconds */
@@ -30,19 +33,168 @@ extern "C" void c_int3_trigger()
     BLEGrill::instance()->switchTriggered();
 }
 
+extern "C" void c_timeout_connection_timer()
+{
+    BLEGrill::instance()->timeoutConnectionTimer();
+}
+
 
 BLEGrill::BLEGrill():
+    _currState(machine_state_standby),
     _BLE_board(c_handleAciCmds),
     _alarmHandle(),
     _measureTimer(),
     _notifyTimer(),
+    _connectionTimer(),
     _timerIdMeasure(-1),
     _timerIdNotify(-1),
     _measureIntervall(100),   /* 2 seconds */
     _notifyIntervall(100),   /* 10 seconds */
-    _deviceSets(DeviceSettings::instance()),
-    _first_measure_pending(true)
+    _deviceSets(DeviceSettings::instance())
 {
+}
+
+void BLEGrill::triggerStateMachine(const BLEGrill::STATEMACHINE_EVENTS &event)
+{
+    STATEMACHINE_STATES old = _currState;
+    switch(_currState)
+    {
+        case machine_state_standby:
+            /* Ignore event and go directly into broadcast state */
+            goToState(machine_state_waitForRadioResetBroadcast);
+            break;
+
+        case machine_state_wairForConnectionBroadcast_Resp:
+            if(event == machine_event_connectionRsp)
+            {
+                goToState(machine_state_broadcast);
+            }
+            else if(event == machine_event_timeout)
+            {
+                /* Okay, device not connected.
+                 * So do radio reset */
+               goToState(machine_state_waitForRadioResetBroadcast);
+            }
+#ifdef STATEMACHINE_DEBUG
+            else
+            {
+                Serial.print("Unknon Event. State machine. Old: ");
+                Serial.print(old,DEC);
+                Serial.print(", new: ");
+                Serial.print(_currState,DEC);
+                Serial.print(", event: ");
+                Serial.println(event,DEC);
+            }
+#endif
+            break;
+
+        case machine_state_broadcast:
+            if(event == machine_event_connect)
+            {
+                /* Oh, there is a connection request.
+                 * Reset ble radio to disable broadcast and
+                 * then activate connection mode again */
+                goToState(machine_state_connected);
+            }
+#ifdef STATEMACHINE_DEBUG
+            else
+            {
+                Serial.print("Unknon Event. State machine. Old: ");
+                Serial.print(old,DEC);
+                Serial.print(", new: ");
+                Serial.print(_currState,DEC);
+                Serial.print(", event: ");
+                Serial.println(event,DEC);
+            }
+#endif
+            break;
+
+        case machine_state_connected:
+            if(event == machine_event_disconnect)
+            {
+                /* Device is disconnected.
+                 * Go back to broadcast mode */
+                goToState(machine_state_waitForRadioResetBroadcast);
+            }
+#ifdef STATEMACHINE_DEBUG
+            else
+            {
+                Serial.print("Unknon Event. State machine. Old: ");
+                Serial.print(old,DEC);
+                Serial.print(", new: ");
+                Serial.print(_currState,DEC);
+                Serial.print(", event: ");
+                Serial.println(event,DEC);
+            }
+#endif
+            break;
+
+        case machine_state_waitForRadioResetBroadcast:
+            if(event == machine_event_radioResetRsp)
+            {
+                goToState(machine_state_wairForConnectionBroadcast_Resp);
+            }
+            else if(event == machine_event_timeout)
+            {
+                /* Okay, no reset ack.
+                 * So do it again */
+               goToState(machine_state_waitForRadioResetBroadcast);
+            }
+#ifdef STATEMACHINE_DEBUG
+            else
+            {
+                Serial.print("Unknon Event. State machine. Old: ");
+                Serial.print(old,DEC);
+                Serial.print(", new: ");
+                Serial.print(_currState,DEC);
+                Serial.print(", event: ");
+                Serial.println(event,DEC);
+            }
+#endif
+            break;
+}
+
+#ifdef STATEMACHINE_DEBUG
+    Serial.print("State machine. Old: ");
+    Serial.print(old,DEC);
+    Serial.print(", new: ");
+    Serial.print(_currState,DEC);
+    Serial.print(", event: ");
+    Serial.println(event,DEC);
+#endif
+}
+
+void BLEGrill::goToState(const BLEGrill::STATEMACHINE_STATES &state)
+{
+    stopConnectionTimer();
+
+    switch(state)
+    {
+        case machine_state_standby:
+            /* In standby we do neither broadcast or connection mode */
+            break;
+        case machine_state_waitForRadioResetBroadcast:
+            /* Reset radio */
+            this->resetBleRadio();
+            this->startConnectionTimer();
+            break;
+        case machine_state_wairForConnectionBroadcast_Resp:
+            /* activate connection mode */
+            this->activateConnectionMode();
+            this->startConnectionTimer();
+            break;
+        case machine_state_broadcast:
+            /* Do nothing */
+            this->activateBroadcastMode();
+            this->updateBluetoothAdvertisingPipes();
+            break;
+        case machine_state_connected:
+            /* Okay, connection established, do nothing */
+            this->updateBluetoothReadPipes();
+            break;
+    }
+
+    _currState = state;
 }
 
 BLEGrill *BLEGrill::instance()
@@ -71,6 +223,9 @@ void BLEGrill::init()
   /* Enable serial debug */
   Serial.begin(57600);
 
+#ifdef ENABLE_STARTUP_DELAY
+    delay(3000);
+#endif
   //while(!Serial) {}  /*  Wait until the serial port is available (useful only for the leonardo) */
 
   /* Configure Bluetooth LE support */
@@ -100,7 +255,7 @@ void BLEGrill::loop()
 {
     _measureTimer.update();
     _notifyTimer.update();
-
+    _connectionTimer.update();
 
 
     /* Process any ACI commands or events */
@@ -114,8 +269,7 @@ void BLEGrill::handleAciCmds(aci_state_t *aci_state, aci_evt_t *aci_evt)
             if (aci_evt->params.device_started.device_mode == ACI_DEVICE_STANDBY) {
                 delay(100);  /* Need to let BLE board settle before we fill set-pipes otherwise first command will be ignored */
 
-                /* Copy intial values into BLE board */
-                this->updateBluetoothReadPipes();
+                triggerStateMachine(machine_event_startup);
             }
             break;
         }
@@ -123,12 +277,18 @@ void BLEGrill::handleAciCmds(aci_state_t *aci_state, aci_evt_t *aci_evt)
         case ACI_EVT_CONNECTED: {
             _BLE_board.timing_change_done = false;
             _BLE_board._isConnected = true;
+
+            triggerStateMachine(machine_event_connect);
+
             break;
         }
 
         case ACI_EVT_DISCONNECTED: {
             _BLE_board.timing_change_done = false;
             _BLE_board._isConnected = false;
+
+            triggerStateMachine(machine_event_disconnect);
+
             break;
         }
 
@@ -143,6 +303,26 @@ void BLEGrill::handleAciCmds(aci_state_t *aci_state, aci_evt_t *aci_evt)
 
         case ACI_EVT_CMD_RSP: {  /* Acknowledgement of an ACI command */
             _BLE_board._aci_cmd_pending = false;
+            uint8_t responseCode = aci_evt->params.cmd_rsp.cmd_opcode;
+            uint8_t status = aci_evt->params.cmd_rsp.cmd_status;
+
+
+            /* Radio Reset code: 0x0E and Success: 0x00 */
+            if( (responseCode == 0x0E) && (status == 0x00) )
+            {
+#ifdef STATEMACHINE_DEBUG
+                Serial.println("Radio reset response received");
+#endif
+                triggerStateMachine(machine_event_radioResetRsp);
+            }
+            /* Connect code: 0x0F and Success: 0x00 */
+            else if( (responseCode == 0x0F) && (status == 0x00) )
+            {
+#ifdef STATEMACHINE_DEBUG
+                Serial.println("Connection response received");
+#endif
+                triggerStateMachine(machine_event_connectionRsp);
+            }
             break;
         }
 
@@ -212,6 +392,13 @@ void BLEGrill::handleAciCmds(aci_state_t *aci_state, aci_evt_t *aci_evt)
             break;
         }
 
+        case ACI_EVT_HW_ERROR:
+        {
+            triggerStateMachine(machine_event_connect);
+            break;
+        }
+
+
         default: {
             /* Clear these flags in case of unhandled switch case
              to avoid staying in while() loop forever
@@ -254,21 +441,33 @@ void BLEGrill::triggerMeasurement(void)
             sensor->measureTemperature();
     }
 
-    /* Set current values to BLE pipes */
-    updateBluetoothReadPipes();
+    /* Update only in broadcast or connected state */
+    if( _currState == machine_state_broadcast )
+    {
+        /* Set current values to BLE advertising pipes */
+        updateBluetoothAdvertisingPipes();
+    }
+    else if(_currState == machine_state_connected)
+    {
+        /* Set current values to BLE pipes */
+        updateBluetoothReadPipes();
+    }
 
     /* Check and signal alarms */
     checkAlarms();
-
-    /* Activate sending broadcast */
-  //  activateBroadcast();
 }
 
 
 void BLEGrill::triggerNotifications(void)
 {
-    sendBluetoothNotifications();
+    /* Send only in broadcast and connected state */
+    if( (_currState == machine_state_broadcast) ||
+        (_currState == machine_state_connected) )
+    {
+        sendBluetoothNotifications();
+    }
 }
+
 
 void BLEGrill::switchTriggered()
 {
@@ -280,6 +479,14 @@ void BLEGrill::switchTriggered()
     }
 }
 
+
+void BLEGrill::timeoutConnectionTimer()
+{
+#ifdef STATEMACHINE_DEBUG
+    Serial.println(F("Connection timer timeout"));
+#endif
+    triggerStateMachine(machine_event_timeout);
+}
 
 
 void BLEGrill::checkAlarms()
@@ -311,7 +518,7 @@ void BLEGrill::quittAlarm(const uint8_t state)
     if(state > 0)
         _deviceSets->setBuzzerState(false);
 
-#ifdef DEBUG
+#ifdef ALARM_DEBUG
     if(state > 0)
         Serial.print("Alarm quitted");
     else
@@ -323,6 +530,54 @@ void BLEGrill::updateBluetoothReadPipes()
 {
     byte buffer[10]; /* Initialize buffer with biggest possible size */
     uint8_t bufferSize = 0;
+    /* Loop through all sensors and check temperature */
+    for(int i=0; i<MAX_TEMP_SENSORS; i++)
+    {
+        TempSensor* sensor = getSensorByNb(i);
+
+        /* Set data for all sensors */
+        if( sensor )
+        {
+#ifdef SENSOR_DEBUG
+            Serial.print("Update Sensor:");
+            Serial.print(i+1);
+            Serial.print(", Temp: ");
+            Serial.println(sensor->getTemperature(),DEC);
+#endif
+            /* Set temperature */
+            sensor->getTempMeasurementBuffer(buffer, &bufferSize);
+            _BLE_board.setValueForCharacteristic(sensor->getPipeTempSetId(), buffer, bufferSize);
+
+            /* Set sensor config */
+            getSensorConfig(sensor, buffer, &bufferSize);
+            _BLE_board.setValueForCharacteristic(sensor->getPipeSensorConfigSetId(), buffer, bufferSize);
+
+            /* Set Alarm settings */
+            getAlarmSettings(sensor, buffer, &bufferSize);
+            _BLE_board.setValueForCharacteristic(sensor->getPipeAlarmSettingsSetId(), buffer, bufferSize);
+        }
+
+        /* Set Hardware states */
+        getHardwareStates(buffer, &bufferSize);
+        _BLE_board.setValueForCharacteristic(PIPE_DEVICE_SETTINGS_HARDWARE_STATES_SET, buffer, bufferSize);
+
+        /* Set measure intervall */
+        buffer[0] = _measureIntervall;
+        buffer[1] += (_measureIntervall << 8);
+        _BLE_board.setValueForCharacteristic(PIPE_DEVICE_SETTINGS_MEASUREMENT_INTERVAL_SET, buffer, 2);
+
+        /* Set notify intervall */
+        buffer[0] = _notifyIntervall;
+        buffer[1] += (_notifyIntervall << 8);
+        _BLE_board.setValueForCharacteristic(PIPE_DEVICE_SETTINGS_NOTIFY_INTERVAL_SET, buffer, 2);
+    }
+#ifdef ACTIONS_DEBUG
+    Serial.println(F("updateBluetoothReadPipes"));
+#endif
+}
+
+void BLEGrill::updateBluetoothAdvertisingPipes()
+{
     uint8_t tempBroadCast[sizeof(ALL_TEMP_BROADCAST)];
     uint8_t posTempBroadcast = 0;
 
@@ -336,23 +591,12 @@ void BLEGrill::updateBluetoothReadPipes()
         /* Set data for all sensors */
         if( sensor )
         {
+#ifdef SENSOR_DEBUG
             Serial.print("Update Sensor:");
             Serial.print(i+1);
             Serial.print(", Temp: ");
             Serial.println(sensor->getTemperature(),DEC);
-
-            /* Set temperature */
-            sensor->getTempMeasurementBuffer(buffer, &bufferSize);
-            _BLE_board.setValueForCharacteristic(sensor->getPipeTempSetId(), buffer, bufferSize);
-
-            /* Set sensor config */
-            getSensorConfig(sensor, buffer, &bufferSize);
-            _BLE_board.setValueForCharacteristic(sensor->getPipeSensorConfigSetId(), buffer, bufferSize);
-
-            /* Set Alarm settings */
-            getAlarmSettings(sensor, buffer, &bufferSize);
-            _BLE_board.setValueForCharacteristic(sensor->getPipeAlarmSettingsSetId(), buffer, bufferSize);
-
+#endif
             if(posTempBroadcast < sizeof(tempBroadCast))
             {
                 tempBroadCast[posTempBroadcast++] = sensor->getTemperature();
@@ -372,22 +616,10 @@ void BLEGrill::updateBluetoothReadPipes()
         /* Set All Temperature Broadcast Data */
         _BLE_board.setValueForCharacteristic(PIPE_TEMPERATURES_BROADCAST_ALL_TEMPERATURES_BROADCAST, (uint8_t*)&tempBroadCast, sizeof(tempBroadCast));
 
-        /* Set Hardware states */
-        getHardwareStates(buffer, &bufferSize);
-        _BLE_board.setValueForCharacteristic(PIPE_DEVICE_SETTINGS_HARDWARE_STATES_SET, buffer, bufferSize);
-
-        /* Set measure intervall */
-        buffer[0] = _measureIntervall;
-        buffer[1] += (_measureIntervall << 8);
-        _BLE_board.setValueForCharacteristic(PIPE_DEVICE_SETTINGS_MEASUREMENT_INTERVAL_SET, buffer, 2);
-
-        /* Set notify intervall */
-        buffer[0] = _notifyIntervall;
-        buffer[1] += (_notifyIntervall << 8);
-        _BLE_board.setValueForCharacteristic(PIPE_DEVICE_SETTINGS_NOTIFY_INTERVAL_SET, buffer, 2);
     }
-
-    Serial.println(F("updateBluetoothReadPipes"));
+#ifdef ACTIONS_DEBUG
+    Serial.println(F("updateBluetoothAdvertisingPipes"));
+#endif
 }
 
 void BLEGrill::sendBluetoothNotifications()
@@ -411,8 +643,9 @@ void BLEGrill::sendBluetoothNotifications()
       }
 
   }
-
+#ifdef ACTIONS_DEBUG
   Serial.println(F("sendBluetoothNotifications"));
+#endif
 }
 
 void BLEGrill::sendAlarmViaBluetooth(const bool isAlarmActive)
@@ -428,17 +661,32 @@ void BLEGrill::sendAlarmViaBluetooth(const bool isAlarmActive)
 }
 
 
-void BLEGrill::activateBroadcast()
+void BLEGrill::activateBroadcastMode()
 {
-    /* Should only be done once after updated Pipes */
-    if(_first_measure_pending)
-    {
-        lib_aci_open_adv_pipe(PIPE_ALARM_NOTIFIER_ALARM_INDICATION_BROADCAST);
-        lib_aci_open_adv_pipe(PIPE_TEMPERATURES_BROADCAST_ALL_TEMPERATURES_BROADCAST);
-        lib_aci_broadcast(0/* indefinitely */, 0x1000 /* advertising interval 1s*/);
-        _first_measure_pending = true;
-        Serial.println(F("Broadcast activate"));
-    }
+    /* lib_aci_broadcast not needed, because we advertise data through
+     * scan_result. So only open advertise pipes */
+    lib_aci_open_adv_pipe(PIPE_ALARM_NOTIFIER_ALARM_INDICATION_BROADCAST);
+    lib_aci_open_adv_pipe(PIPE_TEMPERATURES_BROADCAST_ALL_TEMPERATURES_BROADCAST);
+
+    updateBluetoothReadPipes();
+    Serial.println(F("Broadcast-Mode activate"));
+}
+
+
+void BLEGrill::activateConnectionMode()
+{
+    /* Activate connection mode */
+    lib_aci_connect(0/* in seconds  : 0 means forever */,
+                    ADVERTISING_INTERVAL /* advertising interval 50ms*/);
+    Serial.println(F("Connect-Mode activate"));
+}
+
+
+void BLEGrill::resetBleRadio()
+{
+    /* Reset radio, that means broadcast and connection mode */
+    lib_aci_radio_reset();
+    Serial.println(F("BLE Radio reset"));
 }
 
 
@@ -497,6 +745,29 @@ void BLEGrill::setMeasureIntervall(uint16_t *intervall)
 
         Serial.println(_measureIntervall,DEC);
     }
+}
+
+void BLEGrill::startConnectionTimer()
+{
+    /* Stop timer only if already running */
+    stopConnectionTimer();
+
+    _timerIdConnection = _connectionTimer.after( CONNECTION_TIMER_TIME, c_timeout_connection_timer);
+#ifdef STATEMACHINE_DEBUG
+    Serial.println(F("Connection timer started"));
+#endif
+}
+
+void BLEGrill::stopConnectionTimer()
+{
+    /* Stop timer only if already running */
+    if(_timerIdConnection >= 0)
+    {
+        _connectionTimer.stop(_timerIdConnection);
+    }
+#ifdef STATEMACHINE_DEBUG
+    Serial.println(F("Connection timer stopped"));
+#endif
 }
 
 
@@ -708,7 +979,7 @@ void BLEGrill::setSensorConfig(const uint8_t sensorNb, const uint8_t *bytes)
         sensor->activateSensor(sensorEnable);
         sensor->setSensorType(sensorType);
 
-#ifdef DEBUG
+#ifdef SENSOR_DEBUG
         Serial.print("Set sensor config sensor: ");
         Serial.print(sensor->getSensorNb(),DEC);
         Serial.print(", enable:");
@@ -717,13 +988,13 @@ void BLEGrill::setSensorConfig(const uint8_t sensorNb, const uint8_t *bytes)
         Serial.println(sensorType,DEC);
 #endif
     }
+#ifdef SENSOR_DEBUG
     else
     {
-#ifdef DEBUG
         Serial.print("Sensor config not set, wrong sensor:");
         Serial.println(sensorNb,DEC);
-#endif
     }
+#endif
 }
 
 void BLEGrill::getSensorConfig(const TempSensor* sensor, uint8_t *bytes, uint8_t *size) const
@@ -736,7 +1007,7 @@ void BLEGrill::getSensorConfig(const TempSensor* sensor, uint8_t *bytes, uint8_t
 
     *size = 2;
 
-#ifdef DEBUG
+#ifdef SENSOR_DEBUG
         Serial.print("Sensor config Sensor:");
         Serial.print(sensor->getSensorNb(),DEC);
         Serial.print(", data:");
@@ -765,7 +1036,7 @@ void BLEGrill::setAlarmSettings(const uint8_t sensorNb, const uint8_t *bytes)
         sensor->setHighTempBorder(highTempBorder);
         sensor->setLowTempBorder(lowTempBorder);
 
-#ifdef DEBUG
+#ifdef ALARM_DEBUG
         Serial.print("Set Alarm Settings Sensor:");
         Serial.print(sensor->getSensorNb(),DEC);
         Serial.print(", alarm type:");
@@ -776,14 +1047,13 @@ void BLEGrill::setAlarmSettings(const uint8_t sensorNb, const uint8_t *bytes)
         Serial.println(lowTempBorder,DEC);
 #endif
     }
+#ifdef ALARM_DEBUG
     else
     {
-#ifdef DEBUG
         Serial.print("Sensor alarm settings not set, wrong sensor:");
         Serial.println(sensorNb,DEC);
-#endif
     }
-
+#endif
 }
 
 void BLEGrill::getAlarmSettings(const TempSensor* sensor, uint8_t *bytes, uint8_t *size) const
@@ -800,7 +1070,7 @@ void BLEGrill::getAlarmSettings(const TempSensor* sensor, uint8_t *bytes, uint8_
 
     *size = 6;
 
-#ifdef DEBUG
+#ifdef ALARM_DEBUG
         Serial.print("Alarm Settings Sensor:");
         Serial.print(sensor->getSensorNb(),DEC);
         Serial.print(", data:");
@@ -839,7 +1109,7 @@ void BLEGrill::setHardwareStates(const uint8_t *bytes)
     _deviceSets->setAlarmLedState(alarmLedState);
     _deviceSets->setStatusLedState(statusLedState);
 
-#ifdef DEBUG
+#ifdef HW_STATES_DEBUG
         Serial.print("Set hadware stats. BuzzerEnable:");
         Serial.print(buzzerEnable,DEC);
         Serial.print(", buzzerState:");
@@ -867,7 +1137,7 @@ void BLEGrill::getHardwareStates(uint8_t *bytes, uint8_t *size) const
     bytes[0] = hwStates;
     *size = 1;
 
-#ifdef DEBUG
+#ifdef HW_STATES_DEBUG
         Serial.print("HW States:");
         Serial.println(hwStates,BIN);
 #endif
