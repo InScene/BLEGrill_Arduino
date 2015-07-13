@@ -28,18 +28,16 @@ bool AlarmHandle::checkTempSensorAlarms()
             if( alarm  == TempSensor::STATE_NO_ALARM)
             {
                 _sensorsAlarmState[i] = TempSensor::STATE_NO_ALARM;
-                #ifdef DEBUG
-                Serial.print("No alarm for sensor: ");
-                Serial.println(sensor->getSensorNb(),DEC);
-                #endif
             }
             /* If alarm, check if it a new one */
             else if( alarm != _sensorsAlarmState[i] )
             {
+#ifdef ALARM_DEBUG
                 Serial.print("Sensor has new alarm. Sensor: ");
                 Serial.print(sensor->getSensorNb(),DEC);
                 Serial.print(", alarm: ");
                 Serial.println(sensor->getAlarmState());
+#endif
 
                 alarmFound = true;
                 _sensorsAlarmState[i] = sensor->getAlarmState();
@@ -48,10 +46,10 @@ bool AlarmHandle::checkTempSensorAlarms()
             }
             else
             {
-                #ifdef DEBUG
+#ifdef ALARM_DEBUG
                 Serial.print("Old Alarm for sensor: ");
                 Serial.println(sensor->getSensorNb(),DEC);
-                #endif
+#endif
                 alarmFound = true;
                 _newAlarm = false;
             }

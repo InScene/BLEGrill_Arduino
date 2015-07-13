@@ -174,9 +174,15 @@ uint8_t TempSensor::getSensorNb() const
     return _sensorNb;
 }
 
-uint16_t TempSensor::getTemperature() const
+uint16_t TempSensor::getTemperatureFixedPoint() const
 {
     return _temperature;
+}
+
+void TempSensor::getTemperatureAsChar(char* buff) const
+{
+    double temp = ((double)_temperature)/100;
+    dtostrf(temp,2,2,buff);
 }
 
 uint16_t TempSensor::getHighTempBorder() const
@@ -367,7 +373,7 @@ bool TempSensor::isHighAlarm() const
         /* Set alarm only if alarm type is selected */
         if( ((_alarmType == HIGH_ALARM) ||
              (_alarmType == HIGH_LOW_ALARM) ) &&
-            (getTemperature() > _highTempBorder) )
+            (getTemperatureFixedPoint() > _highTempBorder) )
         {
             alarm = true;
         }
@@ -378,7 +384,7 @@ bool TempSensor::isHighAlarm() const
         /* Alarm only still active when state correct and temperature higher than border + hysteresis */
         if( ((_alarmType == HIGH_ALARM) ||
              (_alarmType == HIGH_LOW_ALARM) ) &&
-            (getTemperature() > (_highTempBorder-_TEMP_ALARM_HYSTERESIS)) )
+            (getTemperatureFixedPoint() > (_highTempBorder-_TEMP_ALARM_HYSTERESIS)) )
         {
             alarm = true;
         }
@@ -397,7 +403,7 @@ bool TempSensor::isLowAlarm() const
         /* Set alarm only if alarm type is selected */
         if( ((_alarmType == LOW_ALARM) ||
              (_alarmType == HIGH_LOW_ALARM) ) &&
-            (getTemperature() < _lowTempBorder) )
+            (getTemperatureFixedPoint() < _lowTempBorder) )
         {
             alarm = true;
         }
@@ -408,7 +414,7 @@ bool TempSensor::isLowAlarm() const
         /* Alarm only still active when state correct and temperature lower than border + hysteresis */
         if( ((_alarmType == LOW_ALARM) ||
              (_alarmType == HIGH_LOW_ALARM) ) &&
-            (getTemperature() > (_lowTempBorder+_TEMP_ALARM_HYSTERESIS)) )
+            (getTemperatureFixedPoint() > (_lowTempBorder+_TEMP_ALARM_HYSTERESIS)) )
         {
             alarm = true;
         }

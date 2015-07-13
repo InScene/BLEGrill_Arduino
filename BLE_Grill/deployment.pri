@@ -388,7 +388,8 @@ HEADERS += \
     $$PWD/constant.h \
     $$PWD/DeviceSettings.h \
     $$PWD/AlarmHandle.h \
-    $$PWD/BLEGrill.h
+    $$PWD/BLEGrill.h \
+    $$PWD/nextiondisplay.h
 
 SOURCES += \
     $$PWD/D:/Benutzerdaten/Christian/CloudStation/Eigene Dokumente/Arduino/libraries/BLE/aci_queue.cpp \
@@ -518,7 +519,8 @@ SOURCES += \
     $$PWD/TempSensor.cpp \
     $$PWD/DeviceSettings.cpp \
     $$PWD/AlarmHandle.cpp \
-    $$PWD/BLEGrill.cpp
+    $$PWD/BLEGrill.cpp \
+    $$PWD/nextiondisplay.cpp
 
 DISTFILES += \
     $$PWD/D:/Benutzerdaten/Christian/CloudStation/Eigene Dokumente/Arduino/libraries/BLEGrill_nRF8001/BLEGrill_nRF8001.xml

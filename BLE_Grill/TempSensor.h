@@ -50,7 +50,8 @@ public:
 
     void getTempMeasurementBuffer(uint8_t *dest, uint8_t *size) const;
     uint8_t getSensorNb() const;
-    uint16_t getTemperature() const;
+    uint16_t getTemperatureFixedPoint() const;
+    void getTemperatureAsChar(char* buff) const;
     uint16_t getHighTempBorder() const;
     uint16_t getLowTempBorder() const;
     uint8_t getPipeTempSetId() const;

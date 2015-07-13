@@ -1,5 +1,9 @@
 #include "BLEGrill.h"
 
+#ifdef ENABLE_NEXTION_HMI
+    #include "nextiondisplay.h"
+#endif
+
 #define CHECK_BIT(var,pos)  ((var) & (1<<(pos)))
 #define SET_BIT(var,pos)    ((var) |= (1<<(pos)))
 #define CLEAR_BIT(var,pos)  ((var) &= ~(1<<(pos)))
@@ -7,7 +11,11 @@
 
 /* Time in millisecond before timeout timer fire */
 #define CONNECTION_TIMER_TIME 5000
+#define SERIAL_BAUDRATE 57600
 
+#ifdef ENABLE_NEXTION_HMI
+    NextionDisplay nextionHmi((HardwareSerial&)Serial, SERIAL_BAUDRATE);
+#endif
 BLEGrill* BLEGrill::_instance = 0;
 static const uint16_t _defMeasureIntvall = 2;    /* 2 seconds */
 static const uint16_t _defNotifyIntervall = 10;  /* 10 seconds */
@@ -237,8 +245,10 @@ void BLEGrill::init()
     CLKPR = 0;
 #endif
 
-  /* Enable serial debug */
-  Serial.begin(57600);
+#ifndef ENABLE_NEXTION_HMI
+  /* Enable serial debug only when hmi not used */
+  Serial1.begin(SERIAL_BAUDRATE);
+#endif
 
 #ifdef ENABLE_STARTUP_DELAY
     delay(3000);
@@ -272,6 +282,8 @@ void BLEGrill::init()
   // enable pin change interrupt 0
   PCICR = (1 << PCIE0);
 
+  //interrupts();                      // Enable interrupts
+
 #ifdef ACTIONS_DEBUG
   Serial.println(F("Start work"));
 #endif
@@ -283,9 +295,16 @@ void BLEGrill::loop()
     _notifyTimer.update();
     _connectionTimer.update();
 
-
     /* Process any ACI commands or events */
     _BLE_board.ble_loop();
+
+#ifdef ENABLE_NEXTION_HMI
+    /* Send data, such as temperature, to display */
+//    nextionHmi.updateData();
+
+    /* Process any HMI events */
+    nextionHmi.checkSerial();
+#endif
 }
 
 void BLEGrill::handleAciCmds(aci_state_t *aci_state, aci_evt_t *aci_evt)
@@ -505,6 +524,9 @@ void BLEGrill::switchTriggered()
 #endif
 
         DeviceSettings::instance()->setBuzzerState(false);
+
+        /* Send data, such as temperature, to display */
+        nextionHmi.updateData();
     }
 }
 
@@ -603,6 +625,7 @@ void BLEGrill::updateBluetoothReadPipes()
 #ifdef ACTIONS_DEBUG
     Serial.println(F("updateBluetoothReadPipes"));
 #endif
+
 }
 
 void BLEGrill::updateBluetoothAdvertisingPipes()
@@ -628,8 +651,8 @@ void BLEGrill::updateBluetoothAdvertisingPipes()
 #endif
             if(posTempBroadcast < sizeof(tempBroadCast))
             {
-                tempBroadCast[posTempBroadcast++] = sensor->getTemperature();
-                tempBroadCast[posTempBroadcast++] = (sensor->getTemperature() >> 8);
+                tempBroadCast[posTempBroadcast++] = sensor->getTemperatureFixedPoint();
+                tempBroadCast[posTempBroadcast++] = (sensor->getTemperatureFixedPoint() >> 8);
             }
         }
         else
@@ -665,7 +688,7 @@ void BLEGrill::sendBluetoothNotifications()
       /* Update Sensor only when state and temperature okay */
       if( sensor &&
           (sensor->getState() == TempSensor::SENSOR_OK) &&
-          (sensor->getTemperature() != TempSensor::TEMPERATURE_UNDEFINED) )
+          (sensor->getTemperatureFixedPoint() != TempSensor::TEMPERATURE_UNDEFINED) )
       {
           sensor->getTempMeasurementBuffer(buffer, &bufferSize);
           _BLE_board.notifyClientOfValueForCharacteristic(sensor->getPipeTxId(), buffer, bufferSize);

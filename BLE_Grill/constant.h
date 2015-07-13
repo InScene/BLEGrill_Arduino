@@ -2,6 +2,7 @@
 #define CONSTANT
 
 //#define ENABLE_STARTUP_DELAY 1 /* Enables a 3 second delay on startup */
+#define ENABLE_NEXTION_HMI 1
 
 /* Enable debug prints */
 //#define ACI_DEBUG 1 /* ACI lib */
@@ -31,7 +32,7 @@
 /* Pin A1: Free, IO or AnalogInput A1 */
 #define ANALOG_SENSOR4_PIN              A2
 #define ANALOG_SENSOR3_PIN              A3
-#define ANALOG_SENSOR2_PIN              A4
+#define ANALOG_SENSOR2_PIN              A
 #define ANALOG_SENSOR1_PIN              A5
 
 #define SWITCH_INTERRUPT_PIN            PINB5
