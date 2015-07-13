@@ -34,7 +34,8 @@
 #define ANALOG_SENSOR2_PIN              A4
 #define ANALOG_SENSOR1_PIN              A5
 
-
+#define SWITCH_INTERRUPT_PIN            PINB5
+#define SWITCH_INTERRUPT                PCINT5
 
 #define MIN_MEASURE_INTERVALL           2   /* 2 seconds */
 #define MAX_TEMP_SENSORS                4

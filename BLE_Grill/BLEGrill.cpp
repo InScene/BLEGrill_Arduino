@@ -28,14 +28,31 @@ extern "C" void c_triggerNotifications()
 {
     BLEGrill::instance()->triggerNotifications();
 }
-extern "C" void c_int3_trigger()
-{
-    BLEGrill::instance()->switchTriggered();
-}
 
 extern "C" void c_timeout_connection_timer()
 {
     BLEGrill::instance()->timeoutConnectionTimer();
+}
+
+// Pin Change detection
+static uint8_t lastPinBVal = 0;
+
+// Pin change port 0 interrupt
+ISR(PCINT0_vect)
+{
+    uint8_t newB = PINB;
+    uint8_t chgB = newB ^ lastPinBVal; // bitwise XOR will set all bits that have changed
+    lastPinBVal = newB;
+
+    // has any of the pins changed?
+    if (chgB)
+    {
+        // find out which pin has changed
+        if (chgB & _BV(SWITCH_INTERRUPT_PIN))
+        {
+            BLEGrill::instance()->switchTriggered();
+        }
+    }
 }
 
 
@@ -244,11 +261,20 @@ void BLEGrill::init()
   /* Set notify intervall and start notify timer */
   setNotifyIntervall((uint16_t*)&_defNotifyIntervall);
 
-  /* Activate interrupt 3 at Uart TX. Uart still working */
-  attachInterrupt(3, c_int3_trigger, FALLING );
-  interrupts();                      // Enable interrupts
 
+  // We use pin change interrupts to detect changes in the signal
+  // If you're unfamiliar with how this works, please look up some
+  // article or tutorial on the subject.
+
+  // only allow pin change interrupts for PB4-7 (digital pins 8-11)
+  PCMSK0 += (1 << SWITCH_INTERRUPT);
+
+  // enable pin change interrupt 0
+  PCICR = (1 << PCIE0);
+
+#ifdef ACTIONS_DEBUG
   Serial.println(F("Start work"));
+#endif
 }
 
 void BLEGrill::loop()
@@ -474,7 +500,10 @@ void BLEGrill::switchTriggered()
     if(millis() > (_lastDebounceTime + _debounceDelay) )
     {
         _lastDebounceTime = millis();
+#ifdef ACTIONS_DEBUG
         Serial.println("Switch pressed");
+#endif
+
         DeviceSettings::instance()->setBuzzerState(false);
     }
 }
@@ -669,7 +698,9 @@ void BLEGrill::activateBroadcastMode()
     lib_aci_open_adv_pipe(PIPE_TEMPERATURES_BROADCAST_ALL_TEMPERATURES_BROADCAST);
 
     updateBluetoothReadPipes();
+#ifdef ACTIONS_DEBUG
     Serial.println(F("Broadcast-Mode activate"));
+#endif
 }
 
 
@@ -686,7 +717,9 @@ void BLEGrill::resetBleRadio()
 {
     /* Reset radio, that means broadcast and connection mode */
     lib_aci_radio_reset();
+#ifdef ACTIONS_DEBUG
     Serial.println(F("BLE Radio reset"));
+#endif
 }
 
 
@@ -707,15 +740,18 @@ void BLEGrill::setNotifyIntervall(uint16_t *intervall)
             }
 
             _timerIdNotify = _notifyTimer.every( (_notifyIntervall * 1000), c_triggerNotifications);
-
+#ifdef ACTIONS_DEBUG
             Serial.print(F("Notify intervall set to: "));
+#endif
         }
+#ifdef ACTIONS_DEBUG
         else
         {
             Serial.print(F("Notify intervall to small, not changed: "));
         }
 
         Serial.println(_notifyIntervall,DEC);
+#endif
     }
 }
 
@@ -735,15 +771,18 @@ void BLEGrill::setMeasureIntervall(uint16_t *intervall)
             }
 
             _timerIdMeasure = _measureTimer.every( (_measureIntervall * 1000), c_triggerMeasurement);
-
+#ifdef ACTIONS_DEBUG
             Serial.print(F("Measure intervall set to: "));
+#endif
         }
+#ifdef ACTIONS_DEBUG
         else
         {
             Serial.print(F("Measure intervall to small, not changed: "));
         }
 
         Serial.println(_measureIntervall,DEC);
+#endif
     }
 }
 
@@ -780,10 +819,11 @@ void BLEGrill::receivedDataFromPipe(uint8_t *bytes, uint8_t byteCount, uint8_t p
         {
             if (byteCount <= PIPE_UART_OVER_BTLE_UART_RX_RX_MAX_SIZE)
             {
+#ifdef ACTIONS_DEBUG
                 float floatValue = *((float *)bytes);
-
                 Serial.print(F("received UART RX data:" ));
                 Serial.println(floatValue,DEC);
+#endif ACTIONS_DEBUG
             }
             break;
         }
@@ -791,9 +831,9 @@ void BLEGrill::receivedDataFromPipe(uint8_t *bytes, uint8_t byteCount, uint8_t p
         /* Set alarm settings for sensor 1 */
         case PIPE_TEMPERATURE_SENSOR1_ALARM_SETTINGS_RX_ACK_AUTO:
         {
-            Serial.println(F("received sensor1 alarm data" ));
             if (byteCount <= PIPE_TEMPERATURE_SENSOR1_ALARM_SETTINGS_RX_ACK_AUTO_MAX_SIZE)
             {
+#ifdef ACTIONS_DEBUG
                 Serial.print(F("received sensor1 alarm data:" ));
                 Serial.print(bytes[0],HEX);
                 Serial.print(bytes[1],HEX);
@@ -801,6 +841,7 @@ void BLEGrill::receivedDataFromPipe(uint8_t *bytes, uint8_t byteCount, uint8_t p
                 Serial.print(bytes[3],HEX);
                 Serial.print(bytes[4],HEX);
                 Serial.println(bytes[5],HEX);
+#endif
                 setAlarmSettings(0, bytes);
             }
             break;
